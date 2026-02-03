@@ -17,7 +17,6 @@
   "dependencies": {
     "@clawe/ui": "workspace:*",
     "@tanstack/react-query": "^5.75.5",
-    "convex": "^1.21.0",
     "@tiptap/core": "^3.15.3",
     "@tiptap/extension-bubble-menu": "^3.15.3",
     "@tiptap/extension-image": "^3.15.3",
@@ -30,13 +29,15 @@
     "@tiptap/starter-kit": "^3.15.3",
     "@tiptap/suggestion": "^3.15.3",
     "@xyflow/react": "^12.10.0",
+    "convex": "^1.21.0",
     "framer-motion": "^12.29.0",
     "lucide-react": "^0.562.0",
     "next": "16.1.0",
     "next-themes": "^0.4.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "tippy.js": "^6.3.7"
+    "tippy.js": "^6.3.7",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@clawe/eslint-config": "workspace:*",
@@ -45,6 +46,7 @@
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "eslint": "^9.39.1",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "^4.0.18"
   }
 }

@@ -42,3 +42,9 @@ yarn-error.log*
 *.pem
 
 convex/_generated
+
+# Docker
+docker/openclaw/data/
+
+# Local data directory (Clawe config)
+.data/

@@ -1,0 +1,40 @@
+services:
+  clawe:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - OPENCLAW_URL=http://openclaw:18789
+      - OPENCLAW_TOKEN=${OPENCLAW_TOKEN}
+      - CLAWE_DATA_DIR=/data/clawe
+    volumes:
+      - clawe-data:/data/clawe
+    depends_on:
+      openclaw:
+        condition: service_healthy
+    restart: unless-stopped
+
+  openclaw:
+    build:
+      context: ./docker/openclaw
+      dockerfile: Dockerfile
+    environment:
+      - OPENCLAW_TOKEN=${OPENCLAW_TOKEN}
+      - OPENCLAW_PORT=18789
+    volumes:
+      - openclaw-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:18789/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  clawe-data:
+    driver: local
+  openclaw-data:
+    driver: local

@@ -53,4 +53,20 @@ export default defineSchema({
     .index("by_agent", ["agentId"])
     .index("by_task", ["taskId"])
     .index("by_created", ["createdAt"]),
+
+  // Settings - Key-value store for app configuration
+  settings: defineTable({
+    key: v.string(),
+    value: v.any(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
+  // Channels - Connected messaging channels (Telegram, etc.)
+  channels: defineTable({
+    type: v.string(),
+    status: v.union(v.literal("connected"), v.literal("disconnected")),
+    accountId: v.optional(v.string()),
+    connectedAt: v.optional(v.number()),
+    metadata: v.optional(v.any()),
+  }).index("by_type", ["type"]),
 });

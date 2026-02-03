@@ -1,0 +1,131 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock the client module
+vi.mock("./client", () => ({
+  checkHealth: vi.fn(),
+  getConfig: vi.fn(),
+  patchConfig: vi.fn(),
+  saveTelegramBotToken: vi.fn(),
+  probeTelegramToken: vi.fn(),
+}));
+
+import {
+  saveAnthropicApiKey,
+  saveOpenAIApiKey,
+  saveTelegramBotToken,
+  validateTelegramToken,
+  checkOpenClawHealth,
+} from "./actions";
+import {
+  patchConfig,
+  checkHealth,
+  saveTelegramBotToken as saveTelegramBotTokenClient,
+  probeTelegramToken,
+} from "./client";
+
+describe("OpenClaw Actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("saveAnthropicApiKey", () => {
+    it("patches config with Anthropic API key", async () => {
+      vi.mocked(patchConfig).mockResolvedValueOnce({
+        ok: true,
+        result: { success: true, hash: "abc" },
+      });
+
+      await saveAnthropicApiKey("sk-ant-test-key");
+
+      expect(patchConfig).toHaveBeenCalledWith({
+        models: {
+          providers: {
+            anthropic: {
+              apiKey: "sk-ant-test-key",
+            },
+          },
+        },
+      });
+    });
+  });
+
+  describe("saveOpenAIApiKey", () => {
+    it("patches config with OpenAI API key", async () => {
+      vi.mocked(patchConfig).mockResolvedValueOnce({
+        ok: true,
+        result: { success: true, hash: "abc" },
+      });
+
+      await saveOpenAIApiKey("sk-test-key");
+
+      expect(patchConfig).toHaveBeenCalledWith({
+        models: {
+          providers: {
+            openai: {
+              apiKey: "sk-test-key",
+            },
+          },
+        },
+      });
+    });
+  });
+
+  describe("validateTelegramToken", () => {
+    it("returns bot info for valid token", async () => {
+      vi.mocked(probeTelegramToken).mockResolvedValueOnce({
+        ok: true,
+        bot: { id: 123, username: "test_bot" },
+      });
+
+      const result = await validateTelegramToken("123456:ABC-DEF");
+      expect(result.ok).toBe(true);
+      expect(probeTelegramToken).toHaveBeenCalledWith("123456:ABC-DEF");
+    });
+  });
+
+  describe("saveTelegramBotToken", () => {
+    it("validates token then saves to config", async () => {
+      vi.mocked(probeTelegramToken).mockResolvedValueOnce({
+        ok: true,
+        bot: { id: 123, username: "test_bot" },
+      });
+      vi.mocked(saveTelegramBotTokenClient).mockResolvedValueOnce({
+        ok: true,
+        result: { success: true, hash: "abc" },
+      });
+
+      const result = await saveTelegramBotToken("123456:ABC-DEF");
+
+      expect(probeTelegramToken).toHaveBeenCalledWith("123456:ABC-DEF");
+      expect(saveTelegramBotTokenClient).toHaveBeenCalledWith("123456:ABC-DEF");
+      expect(result.ok).toBe(true);
+    });
+
+    it("returns error if token validation fails", async () => {
+      vi.mocked(probeTelegramToken).mockResolvedValueOnce({
+        ok: false,
+        error: "Unauthorized",
+      });
+
+      const result = await saveTelegramBotToken("invalid-token");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.type).toBe("invalid_token");
+      }
+      expect(saveTelegramBotTokenClient).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("checkOpenClawHealth", () => {
+    it("returns health status", async () => {
+      vi.mocked(checkHealth).mockResolvedValueOnce({
+        ok: true,
+        result: { status: "ok", channels: { telegram: { connected: true } } },
+      });
+
+      const result = await checkOpenClawHealth();
+      expect(result.ok).toBe(true);
+    });
+  });
+});

@@ -1,0 +1,45 @@
+export type ToolResult<T = unknown> =
+  | { ok: true; result: T }
+  | { ok: false; error: { type: string; message: string } };
+
+export type ConfigGetResult = {
+  config: Record<string, unknown>;
+  hash: string;
+};
+
+export type ConfigPatchResult = {
+  success: boolean;
+  hash: string;
+};
+
+export type Session = {
+  key: string;
+  label?: string;
+  channel?: string;
+  lastActivity?: number;
+};
+
+export type SessionsListResult = {
+  sessions: Session[];
+};
+
+export type ChannelStatus = {
+  connected: boolean;
+  error?: string;
+};
+
+export type GatewayHealthResult = {
+  status: "ok" | "degraded" | "error";
+  channels: Record<string, ChannelStatus>;
+};
+
+export type TelegramProbeResult = {
+  ok: boolean;
+  error?: string | null;
+  bot?: {
+    id?: number | null;
+    username?: string | null;
+    canJoinGroups?: boolean | null;
+    canReadAllGroupMessages?: boolean | null;
+  };
+};
