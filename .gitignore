@@ -48,3 +48,6 @@ docker/openclaw/data/
 
 # Local data directory (Clawe config)
 .data/
+
+# OpenClaw state directory (shared with Docker in dev)
+.openclaw/

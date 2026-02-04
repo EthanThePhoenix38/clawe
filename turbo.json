@@ -2,7 +2,12 @@
   "$schema": "https://v2-7-6.turborepo.dev/schema.json",
   "ui": "tui",
   "globalEnv": ["ENVIRONMENT"],
-  "globalPassThroughEnv": ["OPENCLAW_URL", "OPENCLAW_TOKEN", "CLAWE_DATA_DIR"],
+  "globalPassThroughEnv": [
+    "OPENCLAW_URL",
+    "OPENCLAW_TOKEN",
+    "CLAWE_DATA_DIR",
+    "OPENCLAW_STATE_DIR"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

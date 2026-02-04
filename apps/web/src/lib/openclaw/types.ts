@@ -44,3 +44,20 @@ export type TelegramProbeResult = {
     canReadAllGroupMessages?: boolean | null;
   };
 };
+
+export type PairingRequest = {
+  id: string;
+  code: string;
+  createdAt: string;
+  lastSeenAt: string;
+  meta?: Record<string, string>;
+};
+
+export type PairingListResult = {
+  requests: PairingRequest[];
+};
+
+export type PairingApproveResult = {
+  id: string;
+  approved: boolean;
+};

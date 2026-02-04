@@ -7,6 +7,7 @@ import {
   saveTelegramBotToken as saveTelegramBotTokenClient,
   probeTelegramToken,
 } from "./client";
+import { approveChannelPairingCode } from "./pairing";
 
 export async function checkOpenClawHealth() {
   return checkHealth();
@@ -21,7 +22,6 @@ export async function validateTelegramToken(botToken: string) {
 }
 
 export async function saveTelegramBotToken(botToken: string) {
-  // First validate the token
   const probeResult = await probeTelegramToken(botToken);
   if (!probeResult.ok) {
     return {
@@ -32,8 +32,6 @@ export async function saveTelegramBotToken(botToken: string) {
       },
     };
   }
-
-  // Then save to OpenClaw config
   return saveTelegramBotTokenClient(botToken);
 }
 
@@ -51,4 +49,11 @@ export async function saveOpenAIApiKey(apiKey: string) {
       OPENAI_API_KEY: apiKey,
     },
   });
+}
+
+export async function approvePairingCode(
+  code: string,
+  channel: string = "telegram",
+) {
+  return approveChannelPairingCode(channel, code);
 }

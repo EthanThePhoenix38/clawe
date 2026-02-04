@@ -3,12 +3,8 @@ services:
     ports:
       - "18789:18789"
     volumes:
-      - openclaw-dev-data:/data
+      - ./.openclaw:/data
 
   clawe:
     profiles:
       - production
-
-volumes:
-  openclaw-dev-data:
-    driver: local
