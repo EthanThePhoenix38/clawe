@@ -125,91 +125,112 @@ export const WeeklyRoutineGrid = () => {
         const isToday = dayIndex === today;
 
         return (
-          <div
-            key={day}
-            className={cn(
-              "flex min-h-45 flex-col rounded-lg border p-3",
-              isToday && "border-pink-600 dark:border-pink-400",
+          <div key={day} className="flex flex-col">
+            {/* Today label above card */}
+            {isToday ? (
+              <div className="mb-2 text-center">
+                <span className="inline-block rounded-full bg-pink-100 px-2.5 py-0.5 text-xs font-semibold text-pink-600 dark:bg-pink-950/50 dark:text-pink-400">
+                  Today ·{" "}
+                  {new Date().toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </span>
+              </div>
+            ) : (
+              <div className="mb-2 h-5" />
             )}
-          >
-            {/* Day header */}
+
             <div
               className={cn(
-                "mb-3 text-center text-sm font-medium",
-                isToday
-                  ? "text-pink-600 dark:text-pink-400"
-                  : "text-muted-foreground",
+                "flex min-h-45 flex-1 flex-col rounded-lg border p-3",
+                isToday && "border-pink-600 dark:border-pink-400",
               )}
             >
-              {day}
-            </div>
+              {/* Day header */}
+              <div
+                className={cn(
+                  "mb-3 text-center text-sm font-medium",
+                  isToday
+                    ? "text-pink-600 dark:text-pink-400"
+                    : "text-muted-foreground",
+                )}
+              >
+                {day}
+              </div>
 
-            {/* Routine cards for this day */}
-            <div className="flex flex-col gap-2">
-              {routinesByDay[dayIndex]?.map((routine) => {
-                const colors = getColors(routine.color);
+              {/* Routine cards for this day */}
+              <div className="flex flex-col gap-2">
+                {routinesByDay[dayIndex]?.map((routine) => {
+                  const colors = getColors(routine.color);
 
-                return (
-                  <HoverCard key={`${routine._id}-${dayIndex}`} openDelay={200}>
-                    <HoverCardTrigger asChild>
-                      <div
-                        className={`cursor-pointer rounded-md border px-2.5 py-2 ${colors.bg} ${colors.border}`}
-                      >
-                        <p
-                          className={`truncate text-sm font-medium ${colors.text}`}
-                        >
-                          {routine.title}
-                        </p>
-                        <p className={`text-xs ${colors.time}`}>
-                          {formatTime(
-                            routine.schedule.hour,
-                            routine.schedule.minute,
-                          )}
-                        </p>
-                      </div>
-                    </HoverCardTrigger>
-                    <HoverCardContent
-                      className="w-72"
-                      side="right"
-                      align="start"
+                  return (
+                    <HoverCard
+                      key={`${routine._id}-${dayIndex}`}
+                      openDelay={200}
                     >
-                      <div className="space-y-2">
-                        <h4 className="text-sm font-semibold">
-                          {routine.title}
-                        </h4>
-                        {routine.description && (
-                          <p className="text-muted-foreground text-sm">
-                            {routine.description}
+                      <HoverCardTrigger asChild>
+                        <div
+                          className={`cursor-pointer rounded-md border px-2.5 py-2 ${colors.bg} ${colors.border}`}
+                        >
+                          <p
+                            className={`truncate text-sm font-medium ${colors.text}`}
+                          >
+                            {routine.title}
                           </p>
-                        )}
-                        <div className="text-muted-foreground flex flex-col gap-1 text-xs">
-                          <div className="flex justify-between">
-                            <span>Schedule</span>
-                            <span className="text-foreground">
-                              {formatScheduleDays(routine.schedule.daysOfWeek)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Time</span>
-                            <span className="text-foreground">
-                              {formatTime(
-                                routine.schedule.hour,
-                                routine.schedule.minute,
-                              )}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Priority</span>
-                            <span className="text-foreground">
-                              {formatPriority(routine.priority)}
-                            </span>
+                          <p className={`text-xs ${colors.time}`}>
+                            {formatTime(
+                              routine.schedule.hour,
+                              routine.schedule.minute,
+                            )}
+                          </p>
+                        </div>
+                      </HoverCardTrigger>
+                      <HoverCardContent
+                        className="w-72"
+                        side="right"
+                        align="start"
+                      >
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-semibold">
+                            {routine.title}
+                          </h4>
+                          {routine.description && (
+                            <p className="text-muted-foreground text-sm">
+                              {routine.description}
+                            </p>
+                          )}
+                          <div className="text-muted-foreground flex flex-col gap-1 text-xs">
+                            <div className="flex justify-between">
+                              <span>Schedule</span>
+                              <span className="text-foreground">
+                                {formatScheduleDays(
+                                  routine.schedule.daysOfWeek,
+                                )}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Time</span>
+                              <span className="text-foreground">
+                                {formatTime(
+                                  routine.schedule.hour,
+                                  routine.schedule.minute,
+                                )}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Priority</span>
+                              <span className="text-foreground">
+                                {formatPriority(routine.priority)}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </HoverCardContent>
-                  </HoverCard>
-                );
-              })}
+                      </HoverCardContent>
+                    </HoverCard>
+                  );
+                })}
+              </div>
             </div>
           </div>
         );

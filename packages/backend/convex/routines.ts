@@ -116,6 +116,24 @@ export const trigger = mutation({
 
     const now = Date.now();
 
+    // Deduplicate: skip if an active task with the same title already exists
+    const existingTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_createdAt")
+      .collect();
+    const activeStatuses = ["inbox", "assigned", "in_progress", "review"];
+    const duplicate = existingTasks.find(
+      (t) => t.title === routine.title && activeStatuses.includes(t.status),
+    );
+    if (duplicate) {
+      // Already an active task for this routine — skip creation
+      await ctx.db.patch(args.routineId, {
+        lastTriggeredAt: now,
+        updatedAt: now,
+      });
+      return duplicate._id;
+    }
+
     // Create task from routine template
     const taskId = await ctx.db.insert("tasks", {
       title: routine.title,
