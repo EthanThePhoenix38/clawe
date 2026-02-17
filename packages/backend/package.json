@@ -19,10 +19,12 @@
     "./types": {
       "types": "./convex/types.ts",
       "default": "./convex/types.ts"
-    }
+    },
+    "./dev-jwks/jwks.json": "./convex/dev-jwks/jwks.json",
+    "./dev-jwks/private.pem": "./convex/dev-jwks/private.pem"
   },
   "scripts": {
-    "dev": "convex dev",
+    "dev": "sh -c '../../scripts/sync-convex-env.sh & convex dev'",
     "debug": "convex dev",
     "deploy": "convex deploy",
     "check-types": "tsc --noEmit"
@@ -32,6 +34,7 @@
   },
   "devDependencies": {
     "@clawe/typescript-config": "workspace:*",
+    "@types/node": "^25.2.3",
     "typescript": "5.9.2"
   }
 }

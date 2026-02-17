@@ -3,9 +3,11 @@ import localFont from "next/font/local";
 import { Montserrat, Space_Grotesk } from "next/font/google";
 import "@clawe/ui/globals.css";
 import "./globals.css";
+import { AuthProvider } from "@/providers/auth-provider";
 import { ConvexClientProvider } from "@/providers/convex-provider";
 import { QueryProvider } from "@/providers/query-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
+import { ApiClientProvider } from "@/providers/api-client-provider";
 import { Toaster } from "@clawe/ui/components/sonner";
 
 const geistSans = localFont({
@@ -27,7 +29,7 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: "Clawe",
-  description: "AI Marketing Agency assistant.",
+  description: "AI-powered multi-agent coordination system.",
 };
 
 export default function RootLayout({
@@ -41,17 +43,21 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${montserrat.variable} ${spaceGrotesk.variable}`}
       >
         <QueryProvider>
-          <ConvexClientProvider>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="system"
-              enableSystem
-              disableTransitionOnChange
-            >
-              {children}
-              <Toaster />
-            </ThemeProvider>
-          </ConvexClientProvider>
+          <AuthProvider>
+            <ApiClientProvider>
+              <ConvexClientProvider>
+                <ThemeProvider
+                  attribute="class"
+                  defaultTheme="system"
+                  enableSystem
+                  disableTransitionOnChange
+                >
+                  {children}
+                  <Toaster />
+                </ThemeProvider>
+              </ConvexClientProvider>
+            </ApiClientProvider>
+          </AuthProvider>
         </QueryProvider>
       </body>
     </html>

@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import os from "os";
-import { client } from "../client.js";
+import { mutation } from "../client.js";
 import { api } from "@clawe/backend";
 
 export type BusinessSetOptions = {
@@ -9,7 +9,6 @@ export type BusinessSetOptions = {
   description?: string;
   favicon?: string;
   metadata?: string; // JSON string
-  approve?: boolean;
   removeBootstrap?: boolean;
 };
 
@@ -33,7 +32,7 @@ export async function businessSet(
   }
 
   // Save to Convex
-  const id = await client.mutation(api.businessContext.save, {
+  const id = await mutation(api.businessContext.save, {
     url,
     name: options.name,
     description: options.description,
@@ -48,21 +47,16 @@ export async function businessSet(
           tone?: string;
         }
       | undefined,
-    approved: options.approve ?? false,
   });
 
   console.log(`Business context saved (id: ${id})`);
 
-  if (options.approve) {
-    console.log("Business context approved.");
-  }
-
   // Remove BOOTSTRAP.md if requested
   if (options.removeBootstrap) {
-    const agencyStateDir =
-      process.env.AGENCY_STATE_DIR || path.join(os.homedir(), ".agency");
+    const squadhubStateDir =
+      process.env.SQUADHUB_STATE_DIR || path.join(os.homedir(), ".squadhub");
     const bootstrapPath = path.join(
-      agencyStateDir,
+      squadhubStateDir,
       "workspaces",
       "clawe",
       "BOOTSTRAP.md",

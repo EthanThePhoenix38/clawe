@@ -1,4 +1,4 @@
-import { client } from "../client.js";
+import { query } from "../client.js";
 import { api } from "@clawe/backend";
 
 /**
@@ -6,7 +6,7 @@ import { api } from "@clawe/backend";
  * Any agent can use this to understand the business they're working for.
  */
 export async function businessGet(): Promise<void> {
-  const context = await client.query(api.businessContext.get, {});
+  const context = await query(api.businessContext.get, {});
 
   if (!context) {
     console.log("Business context not configured.");
@@ -22,7 +22,6 @@ export async function businessGet(): Promise<void> {
         description: context.description,
         favicon: context.favicon,
         metadata: context.metadata,
-        approved: context.approved,
       },
       null,
       2,

@@ -6,6 +6,7 @@ import { api } from "@clawe/backend";
 import { Button } from "@clawe/ui/components/button";
 import { Progress } from "@clawe/ui/components/progress";
 import { Chat } from "@/components/chat";
+import { useAuth } from "@/providers/auth-provider";
 
 const TOTAL_STEPS = 4;
 const CURRENT_STEP = 2;
@@ -15,10 +16,14 @@ const CLAWE_SESSION_KEY = "agent:main:main";
 
 export default function BusinessPage() {
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
 
   // Real-time subscription - auto-updates when CLI saves
-  const businessContext = useQuery(api.businessContext.get);
-  const canContinue = businessContext?.approved === true;
+  const businessContext = useQuery(
+    api.businessContext.get,
+    isAuthenticated ? {} : "skip",
+  );
+  const canContinue = businessContext !== null && businessContext !== undefined;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">

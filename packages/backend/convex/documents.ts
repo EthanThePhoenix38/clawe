@@ -1,9 +1,11 @@
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
+import { resolveTenantId } from "./lib/auth";
+import { getAgentBySessionKey } from "./lib/helpers";
 
 // Generate upload URL for file storage
 export const generateUploadUrl = action({
-  args: {},
+  args: { machineToken: v.optional(v.string()) },
   handler: async (ctx) => {
     return await ctx.storage.generateUploadUrl();
   },
@@ -21,30 +23,45 @@ export const list = query({
       ),
     ),
     limit: v.optional(v.number()),
+    machineToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
     const limit = args.limit ?? 100;
 
-    if (args.type) {
-      const type = args.type;
-      return await ctx.db
+    let docsQuery;
+    const type = args.type;
+    if (type) {
+      docsQuery = ctx.db
         .query("documents")
-        .withIndex("by_type", (q) => q.eq("type", type))
-        .order("desc")
-        .take(limit);
+        .withIndex("by_tenant_type", (q) =>
+          q.eq("tenantId", tenantId).eq("type", type),
+        )
+        .order("desc");
+    } else {
+      docsQuery = ctx.db
+        .query("documents")
+        .withIndex("by_tenant", (q) => q.eq("tenantId", tenantId))
+        .order("desc");
     }
 
-    return await ctx.db.query("documents").order("desc").take(limit);
+    return await docsQuery.take(limit);
   },
 });
 
 // Get documents for a task (deliverables)
 export const getForTask = query({
-  args: { taskId: v.id("tasks") },
+  args: { taskId: v.id("tasks"), machineToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
+    const task = await ctx.db.get(args.taskId);
+    if (!task || task.tenantId !== tenantId) return [];
+
     const documents = await ctx.db
       .query("documents")
-      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+      .withIndex("by_tenant_task", (q) =>
+        q.eq("tenantId", tenantId).eq("taskId", args.taskId),
+      )
       .collect();
 
     // Enrich with creator info and file URL
@@ -69,9 +86,12 @@ export const getForTask = query({
 
 // Get document by ID
 export const get = query({
-  args: { id: v.id("documents") },
+  args: { id: v.id("documents"), machineToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const tenantId = await resolveTenantId(ctx, args);
+    const doc = await ctx.db.get(args.id);
+    if (!doc || doc.tenantId !== tenantId) return null;
+    return doc;
   },
 });
 
@@ -89,29 +109,32 @@ export const create = mutation({
     ),
     taskId: v.optional(v.id("tasks")),
     createdBySessionKey: v.string(),
+    machineToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
+    const { machineToken: _, ...rest } = args;
     const now = Date.now();
 
     // Find the creator agent
-    const agent = await ctx.db
-      .query("agents")
-      .withIndex("by_sessionKey", (q) =>
-        q.eq("sessionKey", args.createdBySessionKey),
-      )
-      .first();
+    const agent = await getAgentBySessionKey(
+      ctx,
+      tenantId,
+      rest.createdBySessionKey,
+    );
 
     if (!agent) {
-      throw new Error(`Agent not found: ${args.createdBySessionKey}`);
+      throw new Error(`Agent not found: ${rest.createdBySessionKey}`);
     }
 
     const documentId = await ctx.db.insert("documents", {
-      title: args.title,
-      content: args.content,
-      path: args.path,
-      type: args.type,
-      taskId: args.taskId,
+      title: rest.title,
+      content: rest.content,
+      path: rest.path,
+      type: rest.type,
+      taskId: rest.taskId,
       createdBy: agent._id,
+      tenantId,
       createdAt: now,
       updatedAt: now,
     });
@@ -120,8 +143,9 @@ export const create = mutation({
     await ctx.db.insert("activities", {
       type: "document_created",
       agentId: agent._id,
-      taskId: args.taskId,
-      message: `${agent.name} created ${args.type}: ${args.title}`,
+      taskId: rest.taskId,
+      message: `${agent.name} created ${rest.type}: ${rest.title}`,
+      tenantId,
       createdAt: now,
     });
 
@@ -137,28 +161,31 @@ export const registerDeliverable = mutation({
     fileId: v.optional(v.id("_storage")),
     taskId: v.id("tasks"),
     createdBySessionKey: v.string(),
+    machineToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
+    const { machineToken: _, ...rest } = args;
     const now = Date.now();
 
-    const agent = await ctx.db
-      .query("agents")
-      .withIndex("by_sessionKey", (q) =>
-        q.eq("sessionKey", args.createdBySessionKey),
-      )
-      .first();
+    const agent = await getAgentBySessionKey(
+      ctx,
+      tenantId,
+      rest.createdBySessionKey,
+    );
 
     if (!agent) {
-      throw new Error(`Agent not found: ${args.createdBySessionKey}`);
+      throw new Error(`Agent not found: ${rest.createdBySessionKey}`);
     }
 
     const documentId = await ctx.db.insert("documents", {
-      title: args.title,
-      path: args.path,
-      fileId: args.fileId,
+      title: rest.title,
+      path: rest.path,
+      fileId: rest.fileId,
       type: "deliverable",
-      taskId: args.taskId,
+      taskId: rest.taskId,
       createdBy: agent._id,
+      tenantId,
       createdAt: now,
       updatedAt: now,
     });
@@ -167,8 +194,9 @@ export const registerDeliverable = mutation({
     await ctx.db.insert("activities", {
       type: "document_created",
       agentId: agent._id,
-      taskId: args.taskId,
-      message: `${agent.name} registered deliverable: ${args.title}`,
+      taskId: rest.taskId,
+      message: `${agent.name} registered deliverable: ${rest.title}`,
+      tenantId,
       createdAt: now,
     });
 
@@ -183,9 +211,14 @@ export const update = mutation({
     title: v.optional(v.string()),
     content: v.optional(v.string()),
     path: v.optional(v.string()),
+    machineToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { id, ...updates } = args;
+    const tenantId = await resolveTenantId(ctx, args);
+    const doc = await ctx.db.get(args.id);
+    if (!doc || doc.tenantId !== tenantId) throw new Error("Not found");
+
+    const { id, machineToken: _, ...updates } = args;
     const filteredUpdates = Object.fromEntries(
       Object.entries(updates).filter(([, value]) => value !== undefined),
     );
@@ -199,8 +232,11 @@ export const update = mutation({
 
 // Delete a document
 export const remove = mutation({
-  args: { id: v.id("documents") },
+  args: { id: v.id("documents"), machineToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
+    const doc = await ctx.db.get(args.id);
+    if (!doc || doc.tenantId !== tenantId) throw new Error("Not found");
     await ctx.db.delete(args.id);
   },
 });

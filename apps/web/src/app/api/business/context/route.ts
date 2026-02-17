@@ -5,8 +5,12 @@ import { api } from "@clawe/backend";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-const agencyToken = process.env.AGENCY_TOKEN;
+function getEnvConfig() {
+  return {
+    convexUrl: process.env.NEXT_PUBLIC_CONVEX_URL,
+    squadhubToken: process.env.SQUADHUB_TOKEN,
+  };
+}
 
 /**
  * GET /api/business/context
@@ -14,14 +18,16 @@ const agencyToken = process.env.AGENCY_TOKEN;
  * Returns the current business context.
  * Used by agents to understand what business they're working for.
  *
- * Requires: Authorization header with AGENCY_TOKEN
+ * Requires: Authorization header with SQUADHUB_TOKEN
  */
 export const GET = async (request: Request) => {
+  const { convexUrl, squadhubToken } = getEnvConfig();
+
   // Validate token
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.replace("Bearer ", "");
 
-  if (!token || token !== agencyToken) {
+  if (!token || token !== squadhubToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -49,7 +55,6 @@ export const GET = async (request: Request) => {
       description: context.description,
       favicon: context.favicon,
       metadata: context.metadata,
-      approved: context.approved,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -63,14 +68,16 @@ export const GET = async (request: Request) => {
  * Saves or updates the business context.
  * Used by Clawe CLI during onboarding.
  *
- * Requires: Authorization header with AGENCY_TOKEN
+ * Requires: Authorization header with SQUADHUB_TOKEN
  */
 export const POST = async (request: Request) => {
+  const { convexUrl, squadhubToken } = getEnvConfig();
+
   // Validate token
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.replace("Bearer ", "");
 
-  if (!token || token !== agencyToken) {
+  if (!token || token !== squadhubToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -95,7 +102,6 @@ export const POST = async (request: Request) => {
       description: body.description,
       favicon: body.favicon,
       metadata: body.metadata,
-      approved: body.approved,
     });
 
     return NextResponse.json({

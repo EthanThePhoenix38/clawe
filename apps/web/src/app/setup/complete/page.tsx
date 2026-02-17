@@ -14,13 +14,13 @@ const CURRENT_STEP = 4;
 
 export default function CompletePage() {
   const router = useRouter();
-  const completeOnboarding = useMutation(api.settings.completeOnboarding);
+  const completeOnboarding = useMutation(api.accounts.completeOnboarding);
   const [isCompleting, setIsCompleting] = useState(false);
 
   const handleFinish = async () => {
     setIsCompleting(true);
     try {
-      await completeOnboarding();
+      await completeOnboarding({});
       router.push("/board");
     } catch (error) {
       console.error("Failed to complete onboarding:", error);

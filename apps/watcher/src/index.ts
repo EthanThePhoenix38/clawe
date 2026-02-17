@@ -1,25 +1,23 @@
 /**
  * Clawe Notification Watcher
  *
- * 1. On startup: ensures heartbeat crons are configured for all agents
- * 2. Continuously: polls Convex for undelivered notifications and delivers them
+ * Continuously polls Convex for undelivered notifications and delivers them.
+ * Also checks for due routines and triggers them.
+ *
+ * Setup logic (agent registration, cron setup, routine seeding) has been
+ * moved to the provisioning API route (POST /api/tenant/provision).
+ *
+ * Multi-tenant: iterates over active tenants each loop iteration.
+ * Queries Convex for all active tenants using WATCHER_TOKEN.
  *
  * Environment variables:
  *   CONVEX_URL        - Convex deployment URL
- *   AGENCY_URL        - Agency gateway URL
- *   AGENCY_TOKEN      - Agency authentication token
+ *   WATCHER_TOKEN     - System-level auth token for querying all tenants
  */
 
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@clawe/backend";
-import type { Doc } from "@clawe/backend/dataModel";
-import {
-  sessionsSend,
-  cronList,
-  cronAdd,
-  type CronAddJob,
-  type CronJob,
-} from "@clawe/shared/agency";
+import { sessionsSend, type SquadhubConnection } from "@clawe/shared/squadhub";
 import { getTimeInZone, DEFAULT_TIMEZONE } from "@clawe/shared/timezone";
 import { validateEnv, config, POLL_INTERVAL_MS } from "./config.js";
 
@@ -28,90 +26,35 @@ validateEnv();
 
 const convex = new ConvexHttpClient(config.convexUrl);
 
-// Agent configuration
-const AGENTS = [
-  {
-    id: "main",
-    name: "Clawe",
-    emoji: "🦞",
-    role: "Squad Lead",
-    cron: "0,15,30,45 * * * *",
-  },
-  {
-    id: "inky",
-    name: "Inky",
-    emoji: "✍️",
-    role: "Writer",
-    cron: "3,18,33,48 * * * *",
-  },
-  {
-    id: "pixel",
-    name: "Pixel",
-    emoji: "🎨",
-    role: "Designer",
-    cron: "7,22,37,52 * * * *",
-  },
-  {
-    id: "scout",
-    name: "Scout",
-    emoji: "🔍",
-    role: "SEO",
-    cron: "11,26,41,56 * * * *",
-  },
-];
+/**
+ * Represents an active tenant for the watcher to service.
+ */
+type TenantInfo = {
+  id: string;
+  connection: SquadhubConnection;
+};
 
-const HEARTBEAT_MESSAGE =
-  "Read HEARTBEAT.md and follow it strictly. Check for notifications with 'clawe check'. If nothing needs attention, reply HEARTBEAT_OK.";
+/**
+ * Get the list of active tenants to service.
+ *
+ * Queries Convex `tenants.listActive` for all active tenants
+ * with their squadhub connection info.
+ */
+async function getActiveTenants(): Promise<TenantInfo[]> {
+  const tenants = await convex.query(api.tenants.listActive, {
+    watcherToken: config.watcherToken,
+  });
+  return tenants.map(
+    (t: { id: string; squadhubUrl: string; squadhubToken: string }) => ({
+      id: t.id,
+      connection: {
+        squadhubUrl: t.squadhubUrl,
+        squadhubToken: t.squadhubToken,
+      },
+    }),
+  );
+}
 
-// Input type for creating a routine (fields required by routines.create mutation)
-type RoutineInput = Pick<
-  Doc<"routines">,
-  "title" | "description" | "priority" | "schedule" | "color"
->;
-
-// Routine seed data (hardcoded for initial setup)
-const SEED_ROUTINES: RoutineInput[] = [
-  {
-    title: "Weekly Performance Review",
-    description:
-      "Review last week's content performance, engagement metrics, and campaign results. Identify top-performing pieces and areas for improvement.",
-    priority: "normal",
-    schedule: {
-      type: "weekly",
-      daysOfWeek: [1],
-      hour: 9,
-      minute: 0,
-    },
-    color: "emerald",
-  },
-  {
-    title: "Morning Brief",
-    description: "Prepare daily morning brief for the team",
-    priority: "high",
-    schedule: {
-      type: "weekly",
-      daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
-      hour: 8,
-      minute: 0,
-    },
-    color: "amber",
-  },
-  {
-    title: "Competitor Scan",
-    description: "Scan competitor activities and updates",
-    priority: "normal",
-    schedule: {
-      type: "weekly",
-      daysOfWeek: [1, 4],
-      hour: 10,
-      minute: 0,
-    },
-    color: "rose",
-  },
-];
-
-const RETRY_BASE_DELAY_MS = 3000;
-const RETRY_MAX_DELAY_MS = 30000;
 const ROUTINE_CHECK_INTERVAL_MS = 10_000; // Check routines every 10 seconds
 
 /**
@@ -122,216 +65,66 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Retry a function indefinitely with exponential backoff (capped)
- */
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  label: string,
-  baseDelayMs = RETRY_BASE_DELAY_MS,
-): Promise<T> {
-  let attempt = 0;
-
-  while (true) {
-    attempt++;
-    try {
-      return await fn();
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      const delayMs = Math.min(baseDelayMs * attempt, RETRY_MAX_DELAY_MS);
-
-      console.log(
-        `[watcher] ${label} failed (attempt ${attempt}), retrying in ${delayMs / 1000}s... (${error.message})`,
-      );
-      await sleep(delayMs);
-    }
-  }
-}
-
-/**
- * Register all agents in Convex (upsert - creates or updates)
- */
-async function registerAgents(): Promise<void> {
-  console.log("[watcher] Registering agents in Convex...");
-  console.log("[watcher] CONVEX_URL:", config.convexUrl);
-
-  // Try to register first agent with retry (waits for Convex to be ready)
-  const firstAgent = AGENTS[0];
-  if (firstAgent) {
-    await withRetry(async () => {
-      const sessionKey = `agent:${firstAgent.id}:main`;
-      await convex.mutation(api.agents.upsert, {
-        name: firstAgent.name,
-        role: firstAgent.role,
-        sessionKey,
-        emoji: firstAgent.emoji,
-      });
-      console.log(
-        `[watcher] ✓ ${firstAgent.name} ${firstAgent.emoji} registered (${sessionKey})`,
-      );
-    }, "Convex connection");
-  }
-
-  // Register remaining agents (Convex is now ready)
-  for (const agent of AGENTS.slice(1)) {
-    const sessionKey = `agent:${agent.id}:main`;
-
-    try {
-      await convex.mutation(api.agents.upsert, {
-        name: agent.name,
-        role: agent.role,
-        sessionKey,
-        emoji: agent.emoji,
-      });
-      console.log(
-        `[watcher] ✓ ${agent.name} ${agent.emoji} registered (${sessionKey})`,
-      );
-    } catch (err) {
-      console.error(
-        `[watcher] Failed to register ${agent.name}:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-
-  console.log("[watcher] Agent registration complete.\n");
-}
-
-/**
- * Setup heartbeat crons for all agents (if not already configured)
- */
-async function setupCrons(): Promise<void> {
-  console.log("[watcher] Checking heartbeat crons...");
-
-  // Retry getting cron list (waits for agency to be ready)
-  const result = await withRetry(async () => {
-    const res = await cronList();
-    if (!res.ok) {
-      throw new Error(res.error?.message ?? "Failed to list crons");
-    }
-    return res;
-  }, "Agency connection");
-
-  const existingNames = new Set(
-    result.result.details.jobs.map((j: CronJob) => j.name),
-  );
-
-  for (const agent of AGENTS) {
-    const cronName = `${agent.id}-heartbeat`;
-
-    if (existingNames.has(cronName)) {
-      console.log(`[watcher] ✓ ${agent.name} ${agent.emoji} heartbeat exists`);
-      continue;
-    }
-
-    console.log(`[watcher] Adding ${agent.name} ${agent.emoji} heartbeat...`);
-
-    const job: CronAddJob = {
-      name: cronName,
-      agentId: agent.id,
-      enabled: true,
-      schedule: { kind: "cron", expr: agent.cron },
-      sessionTarget: "isolated",
-      payload: {
-        kind: "agentTurn",
-        message: HEARTBEAT_MESSAGE,
-        model: "anthropic/claude-sonnet-4-20250514",
-        timeoutSeconds: 600,
-      },
-      delivery: { mode: "none" },
-    };
-
-    const addResult = await cronAdd(job);
-    if (addResult.ok) {
-      console.log(
-        `[watcher] ✓ ${agent.name} ${agent.emoji} heartbeat: ${agent.cron}`,
-      );
-    } else {
-      console.error(
-        `[watcher] Failed to add ${cronName}:`,
-        addResult.error?.message,
-      );
-    }
-  }
-
-  console.log("[watcher] Cron setup complete.\n");
-}
-
-/**
- * Seed initial routines if none exist
- */
-async function seedRoutines(): Promise<void> {
-  console.log("[watcher] Checking routines...");
-
-  const existing = await convex.query(api.routines.list, {});
-
-  if (existing.length > 0) {
-    console.log(`[watcher] ✓ ${existing.length} routine(s) already exist`);
-    return;
-  }
-
-  console.log("[watcher] Seeding initial routines...");
-
-  for (const routine of SEED_ROUTINES) {
-    try {
-      await convex.mutation(api.routines.create, routine);
-      console.log(`[watcher] ✓ Created routine: ${routine.title}`);
-    } catch (err) {
-      console.error(
-        `[watcher] Failed to create routine "${routine.title}":`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-
-  console.log("[watcher] Routine seeding complete.\n");
-}
-
-/**
- * Check for due routines and trigger them.
+ * Check for due routines and trigger them for a single tenant.
  *
  * Uses a 1-hour window for crash tolerance: if a routine is scheduled
  * for 6:00 AM, it can trigger anytime between 6:00 AM and 6:59 AM.
  */
-async function checkRoutines(): Promise<void> {
-  try {
-    // Get user's timezone from settings
-    const timezone =
-      (await convex.query(api.settings.getTimezone)) ?? DEFAULT_TIMEZONE;
+async function checkRoutinesForTenant(machineToken: string): Promise<void> {
+  // Get tenant's timezone from tenant settings
+  const timezone =
+    (await convex.query(api.tenants.getTimezone, {
+      machineToken,
+    })) ?? DEFAULT_TIMEZONE;
 
-    // Get current timestamp and time in user's timezone
-    const now = new Date();
-    const currentTimestamp = now.getTime();
-    const { dayOfWeek, hour, minute } = getTimeInZone(now, timezone);
+  // Get current timestamp and time in user's timezone
+  const now = new Date();
+  const currentTimestamp = now.getTime();
+  const { dayOfWeek, hour, minute } = getTimeInZone(now, timezone);
 
-    // Query for due routines (with 1-hour window tolerance)
-    const dueRoutines = await convex.query(api.routines.getDueRoutines, {
-      currentTimestamp,
-      dayOfWeek,
-      hour,
-      minute,
-    });
+  // Query for due routines (with 1-hour window tolerance)
+  const dueRoutines = await convex.query(api.routines.getDueRoutines, {
+    machineToken,
+    currentTimestamp,
+    dayOfWeek,
+    hour,
+    minute,
+  });
 
-    // Trigger each due routine
-    for (const routine of dueRoutines) {
-      try {
-        const taskId = await convex.mutation(api.routines.trigger, {
-          routineId: routine._id,
-        });
-        console.log(
-          `[watcher] ✓ Triggered routine "${routine.title}" → task ${taskId}`,
-        );
-      } catch (err) {
-        console.error(
-          `[watcher] Failed to trigger routine "${routine.title}":`,
-          err instanceof Error ? err.message : err,
-        );
-      }
+  // Trigger each due routine
+  for (const routine of dueRoutines) {
+    try {
+      const taskId = await convex.mutation(api.routines.trigger, {
+        machineToken,
+        routineId: routine._id,
+      });
+      console.log(
+        `[watcher] ✓ Triggered routine "${routine.title}" → task ${taskId}`,
+      );
+    } catch (err) {
+      console.error(
+        `[watcher] Failed to trigger routine "${routine.title}":`,
+        err instanceof Error ? err.message : err,
+      );
     }
-  } catch (err) {
-    console.error(
-      "[watcher] Error checking routines:",
-      err instanceof Error ? err.message : err,
-    );
+  }
+}
+
+/**
+ * Check routines for all active tenants.
+ */
+async function checkRoutines(): Promise<void> {
+  const tenants = await getActiveTenants();
+
+  for (const tenant of tenants) {
+    try {
+      await checkRoutinesForTenant(tenant.connection.squadhubToken);
+    } catch (err) {
+      console.error(
+        `[watcher] Error checking routines for tenant ${tenant.id}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 }
 
@@ -363,12 +156,18 @@ function formatNotification(notification: {
 }
 
 /**
- * Deliver notifications to a single agent
+ * Deliver notifications to a single agent via the tenant's squadhub
  */
-async function deliverToAgent(sessionKey: string): Promise<void> {
+async function deliverToAgent(
+  connection: SquadhubConnection,
+  sessionKey: string,
+): Promise<void> {
+  const { squadhubToken: machineToken } = connection;
+
   try {
     // Get undelivered notifications for this agent
     const notifications = await convex.query(api.notifications.getUndelivered, {
+      machineToken,
       sessionKey,
     });
 
@@ -385,12 +184,13 @@ async function deliverToAgent(sessionKey: string): Promise<void> {
         // Format the notification message
         const message = formatNotification(notification);
 
-        // Try to deliver to agent session
-        const result = await sessionsSend(sessionKey, message, 10);
+        // Try to deliver to agent session via tenant's squadhub
+        const result = await sessionsSend(connection, sessionKey, message, 10);
 
         if (result.ok) {
           // Mark as delivered in Convex
           await convex.mutation(api.notifications.markDelivered, {
+            machineToken,
             notificationIds: [notification._id],
           });
 
@@ -419,15 +219,21 @@ async function deliverToAgent(sessionKey: string): Promise<void> {
 }
 
 /**
- * Main delivery loop
+ * Main delivery loop — iterates over all active tenants
  */
 async function deliveryLoop(): Promise<void> {
-  // Get all registered agents from Convex
-  const agents = await convex.query(api.agents.list, {});
+  const tenants = await getActiveTenants();
 
-  for (const agent of agents) {
-    if (agent.sessionKey) {
-      await deliverToAgent(agent.sessionKey);
+  for (const tenant of tenants) {
+    // Get all registered agents for this tenant from Convex
+    const agents = await convex.query(api.agents.list, {
+      machineToken: tenant.connection.squadhubToken,
+    });
+
+    for (const agent of agents) {
+      if (agent.sessionKey) {
+        await deliverToAgent(tenant.connection, agent.sessionKey);
+      }
     }
   }
 }
@@ -476,20 +282,10 @@ async function startDeliveryLoop(): Promise<void> {
 async function main(): Promise<void> {
   console.log("[watcher] 🦞 Clawe Watcher starting...");
   console.log(`[watcher] Convex: ${config.convexUrl}`);
-  console.log(`[watcher] Agency: ${config.agencyUrl}`);
   console.log(`[watcher] Notification poll interval: ${POLL_INTERVAL_MS}ms`);
   console.log(
     `[watcher] Routine check interval: ${ROUTINE_CHECK_INTERVAL_MS}ms\n`,
   );
-
-  // Register agents in Convex
-  await registerAgents();
-
-  // Setup crons on startup
-  await setupCrons();
-
-  // Seed routines if needed
-  await seedRoutines();
 
   console.log("[watcher] Starting loops...\n");
 

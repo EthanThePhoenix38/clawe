@@ -4,22 +4,17 @@ Coordination watcher for Clawe multi-agent system.
 
 ## What It Does
 
-1. **On startup:** Registers all agents in Convex (upsert)
-2. **On startup:** Ensures heartbeat crons are configured for all agents
-3. **Continuously:** Polls Convex for undelivered notifications and delivers them
+1. **Continuously:** Polls Convex for undelivered notifications and delivers them
+2. **Continuously:** Checks for due routines and triggers them
 
-This enables:
-
-- Automatic agent heartbeat scheduling (no manual cron setup needed)
-- Near-instant notification delivery without waiting for heartbeats
+Tenant connection info (squadhub URL/token) comes from Convex via `tenants.listActive`.
 
 ## Environment Variables
 
-| Variable       | Required | Description                 |
-| -------------- | -------- | --------------------------- |
-| `CONVEX_URL`   | Yes      | Convex deployment URL       |
-| `AGENCY_URL`   | Yes      | Agency gateway URL          |
-| `AGENCY_TOKEN` | Yes      | Agency authentication token |
+| Variable        | Required | Description                                    |
+| --------------- | -------- | ---------------------------------------------- |
+| `CONVEX_URL`    | Yes      | Convex deployment URL                          |
+| `WATCHER_TOKEN` | Yes      | System-level token for querying active tenants |
 
 ## Running
 
@@ -53,7 +48,7 @@ Schedules are staggered to avoid rate limits.
 │                                                          │
 │   ┌─────────────┐                                        │
 │   │ On Startup  │──> Check/create heartbeat crons        │
-│   └─────────────┘    via agency cron API                 │
+│   └─────────────┘    via squadhub cron API                 │
 │                                                          │
 │   ┌─────────────┐        ┌─────────────────────────┐    │
 │   │ Poll Loop   │───────>│ convex.query(           │    │
@@ -62,13 +57,13 @@ Schedules are staggered to avoid rate limits.
 │          │               └─────────────────────────┘    │
 │          │                                               │
 │          │               ┌─────────────────────────┐    │
-│          └──────────────>│ agency.sessionsSend()   │    │
+│          └──────────────>│ squadhub.sessionsSend()   │    │
 │                          └─────────────────────────┘    │
 └─────────────────────────────────────────────────────────┘
             │                           │
             ▼                           ▼
      ┌───────────┐              ┌───────────────┐
-     │  CONVEX   │              │    AGENCY     │
+     │  CONVEX   │              │    SQUADHUB     │
      │  (data)   │              │  (delivery)   │
      └───────────┘              └───────────────┘
 ```

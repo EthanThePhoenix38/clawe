@@ -6,10 +6,17 @@
     "CONVEX_URL",
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
-    "AGENCY_URL",
-    "AGENCY_TOKEN",
+    "SQUADHUB_URL",
+    "SQUADHUB_TOKEN",
     "CLAWE_DATA_DIR",
-    "AGENCY_STATE_DIR"
+    "SQUADHUB_STATE_DIR",
+    "AUTH_PROVIDER",
+    "NEXTAUTH_SECRET",
+    "NEXTAUTH_URL",
+    "AUTO_LOGIN_EMAIL",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "WATCHER_TOKEN"
   ],
   "tasks": {
     "build": {

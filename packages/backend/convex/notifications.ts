@@ -1,15 +1,16 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { resolveTenantId } from "./lib/auth";
+import { getAgentBySessionKey } from "./lib/helpers";
 
 // Get undelivered notifications for an agent (by session key)
 export const getUndelivered = query({
-  args: { sessionKey: v.string() },
+  args: { sessionKey: v.string(), machineToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    // Find the agent
-    const agent = await ctx.db
-      .query("agents")
-      .withIndex("by_sessionKey", (q) => q.eq("sessionKey", args.sessionKey))
-      .first();
+    const tenantId = await resolveTenantId(ctx, args);
+
+    // Find the agent within this tenant
+    const agent = await getAgentBySessionKey(ctx, tenantId, args.sessionKey);
 
     if (!agent) {
       return [];
@@ -18,8 +19,11 @@ export const getUndelivered = query({
     // Get undelivered notifications
     const notifications = await ctx.db
       .query("notifications")
-      .withIndex("by_target_undelivered", (q) =>
-        q.eq("targetAgentId", agent._id).eq("delivered", false),
+      .withIndex("by_tenant_target_undelivered", (q) =>
+        q
+          .eq("tenantId", tenantId)
+          .eq("targetAgentId", agent._id)
+          .eq("delivered", false),
       )
       .collect();
 
@@ -59,12 +63,12 @@ export const getForAgent = query({
   args: {
     sessionKey: v.string(),
     limit: v.optional(v.number()),
+    machineToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const agent = await ctx.db
-      .query("agents")
-      .withIndex("by_sessionKey", (q) => q.eq("sessionKey", args.sessionKey))
-      .first();
+    const tenantId = await resolveTenantId(ctx, args);
+
+    const agent = await getAgentBySessionKey(ctx, tenantId, args.sessionKey);
 
     if (!agent) {
       return [];
@@ -72,7 +76,9 @@ export const getForAgent = query({
 
     let query = ctx.db
       .query("notifications")
-      .withIndex("by_target", (q) => q.eq("targetAgentId", agent._id))
+      .withIndex("by_tenant_target", (q) =>
+        q.eq("tenantId", tenantId).eq("targetAgentId", agent._id),
+      )
       .order("desc");
 
     const notifications = args.limit
@@ -87,11 +93,17 @@ export const getForAgent = query({
 export const markDelivered = mutation({
   args: {
     notificationIds: v.array(v.id("notifications")),
+    machineToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
     const now = Date.now();
 
     for (const id of args.notificationIds) {
+      const notification = await ctx.db.get(id);
+      if (!notification || notification.tenantId !== tenantId) {
+        throw new Error("Notification not found");
+      }
       await ctx.db.patch(id, {
         delivered: true,
         deliveredAt: now,
@@ -116,16 +128,18 @@ export const send = mutation({
     ),
     taskId: v.optional(v.id("tasks")),
     content: v.string(),
+    machineToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
     const now = Date.now();
-    const targetKey = args.targetSessionKey;
 
-    // Find target agent
-    const targetAgent = await ctx.db
-      .query("agents")
-      .withIndex("by_sessionKey", (q) => q.eq("sessionKey", targetKey))
-      .first();
+    // Find target agent within this tenant
+    const targetAgent = await getAgentBySessionKey(
+      ctx,
+      tenantId,
+      args.targetSessionKey,
+    );
 
     if (!targetAgent) {
       throw new Error(`Target agent not found: ${args.targetSessionKey}`);
@@ -134,11 +148,11 @@ export const send = mutation({
     // Find source agent if provided
     let sourceAgentId = undefined;
     if (args.sourceSessionKey) {
-      const sourceKey = args.sourceSessionKey;
-      const sourceAgent = await ctx.db
-        .query("agents")
-        .withIndex("by_sessionKey", (q) => q.eq("sessionKey", sourceKey))
-        .first();
+      const sourceAgent = await getAgentBySessionKey(
+        ctx,
+        tenantId,
+        args.sourceSessionKey,
+      );
       if (sourceAgent) {
         sourceAgentId = sourceAgent._id;
       }
@@ -146,6 +160,7 @@ export const send = mutation({
 
     // Create notification
     const notificationId = await ctx.db.insert("notifications", {
+      tenantId,
       targetAgentId: targetAgent._id,
       sourceAgentId,
       type: args.type,
@@ -157,6 +172,7 @@ export const send = mutation({
 
     // Log activity
     await ctx.db.insert("activities", {
+      tenantId,
       type: "notification_sent",
       agentId: sourceAgentId,
       taskId: args.taskId,
@@ -184,32 +200,36 @@ export const sendToMany = mutation({
     ),
     taskId: v.optional(v.id("tasks")),
     content: v.string(),
+    machineToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
     const now = Date.now();
     const notificationIds: string[] = [];
+
+    // Load all agents for this tenant once
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_tenant", (q) => q.eq("tenantId", tenantId))
+      .collect();
 
     // Find source agent if provided
     let sourceAgentId = undefined;
     if (args.sourceSessionKey) {
-      const sourceKey = args.sourceSessionKey;
-      const sourceAgent = await ctx.db
-        .query("agents")
-        .withIndex("by_sessionKey", (q) => q.eq("sessionKey", sourceKey))
-        .first();
+      const sourceAgent = agents.find(
+        (a) => a.sessionKey === args.sourceSessionKey,
+      );
       if (sourceAgent) {
         sourceAgentId = sourceAgent._id;
       }
     }
 
     for (const targetSessionKey of args.targetSessionKeys) {
-      const targetAgent = await ctx.db
-        .query("agents")
-        .withIndex("by_sessionKey", (q) => q.eq("sessionKey", targetSessionKey))
-        .first();
+      const targetAgent = agents.find((a) => a.sessionKey === targetSessionKey);
 
       if (targetAgent) {
         const id = await ctx.db.insert("notifications", {
+          tenantId,
           targetAgentId: targetAgent._id,
           sourceAgentId,
           type: args.type,
@@ -228,12 +248,11 @@ export const sendToMany = mutation({
 
 // Clear all notifications for an agent (mark all as delivered)
 export const clearAll = mutation({
-  args: { sessionKey: v.string() },
+  args: { sessionKey: v.string(), machineToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const agent = await ctx.db
-      .query("agents")
-      .withIndex("by_sessionKey", (q) => q.eq("sessionKey", args.sessionKey))
-      .first();
+    const tenantId = await resolveTenantId(ctx, args);
+
+    const agent = await getAgentBySessionKey(ctx, tenantId, args.sessionKey);
 
     if (!agent) {
       return 0;
@@ -241,8 +260,11 @@ export const clearAll = mutation({
 
     const notifications = await ctx.db
       .query("notifications")
-      .withIndex("by_target_undelivered", (q) =>
-        q.eq("targetAgentId", agent._id).eq("delivered", false),
+      .withIndex("by_tenant_target_undelivered", (q) =>
+        q
+          .eq("tenantId", tenantId)
+          .eq("targetAgentId", agent._id)
+          .eq("delivered", false),
       )
       .collect();
 

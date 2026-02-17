@@ -1,13 +1,21 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { resolveTenantId } from "./lib/auth";
+import { getAgentBySessionKey } from "./lib/helpers";
 
 // List messages for a task
 export const listForTask = query({
-  args: { taskId: v.id("tasks") },
+  args: { taskId: v.id("tasks"), machineToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
+    const task = await ctx.db.get(args.taskId);
+    if (!task || task.tenantId !== tenantId) return [];
+
     const messages = await ctx.db
       .query("messages")
-      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+      .withIndex("by_tenant_task", (q) =>
+        q.eq("tenantId", tenantId).eq("taskId", args.taskId),
+      )
       .collect();
 
     // Enrich with author info
@@ -38,20 +46,22 @@ export const listByAgent = query({
   args: {
     sessionKey: v.string(),
     limit: v.optional(v.number()),
+    machineToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const agent = await ctx.db
-      .query("agents")
-      .withIndex("by_sessionKey", (q) => q.eq("sessionKey", args.sessionKey))
-      .first();
+    const tenantId = await resolveTenantId(ctx, args);
+
+    const agent = await getAgentBySessionKey(ctx, tenantId, args.sessionKey);
 
     if (!agent) {
       return [];
     }
 
-    let query = ctx.db
+    const query = ctx.db
       .query("messages")
-      .withIndex("by_agent", (q) => q.eq("fromAgentId", agent._id))
+      .withIndex("by_tenant_agent", (q) =>
+        q.eq("tenantId", tenantId).eq("fromAgentId", agent._id),
+      )
       .order("desc");
 
     return args.limit ? await query.take(args.limit) : await query.collect();
@@ -60,13 +70,14 @@ export const listByAgent = query({
 
 // Get recent messages
 export const recent = query({
-  args: { limit: v.optional(v.number()) },
+  args: { limit: v.optional(v.number()), machineToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
     const limit = args.limit ?? 50;
 
     const messages = await ctx.db
       .query("messages")
-      .withIndex("by_created")
+      .withIndex("by_tenant", (q) => q.eq("tenantId", tenantId))
       .order("desc")
       .take(limit);
 
@@ -113,34 +124,41 @@ export const create = mutation({
     ),
     fromSessionKey: v.optional(v.string()),
     humanAuthor: v.optional(v.string()),
+    machineToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
+    const { machineToken: _, ...rest } = args;
     const now = Date.now();
 
     let fromAgentId = undefined;
-    if (args.fromSessionKey) {
-      const sessionKey = args.fromSessionKey;
-      const agent = await ctx.db
-        .query("agents")
-        .withIndex("by_sessionKey", (q) => q.eq("sessionKey", sessionKey))
-        .first();
+    if (rest.fromSessionKey) {
+      const agent = await getAgentBySessionKey(
+        ctx,
+        tenantId,
+        rest.fromSessionKey,
+      );
       if (agent) {
         fromAgentId = agent._id;
       }
     }
 
     const messageId = await ctx.db.insert("messages", {
-      taskId: args.taskId,
+      tenantId,
+      taskId: rest.taskId,
       fromAgentId,
-      humanAuthor: args.humanAuthor,
-      type: args.type ?? "comment",
-      content: args.content,
+      humanAuthor: rest.humanAuthor,
+      type: rest.type ?? "comment",
+      content: rest.content,
       createdAt: now,
     });
 
     // Update task timestamp if linked to a task
-    if (args.taskId) {
-      await ctx.db.patch(args.taskId, { updatedAt: now });
+    if (rest.taskId) {
+      const task = await ctx.db.get(rest.taskId);
+      if (task && task.tenantId === tenantId) {
+        await ctx.db.patch(rest.taskId, { updatedAt: now });
+      }
     }
 
     return messageId;
@@ -149,8 +167,11 @@ export const create = mutation({
 
 // Delete a message
 export const remove = mutation({
-  args: { id: v.id("messages") },
+  args: { id: v.id("messages"), machineToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
+    const message = await ctx.db.get(args.id);
+    if (!message || message.tenantId !== tenantId) throw new Error("Not found");
     await ctx.db.delete(args.id);
   },
 });

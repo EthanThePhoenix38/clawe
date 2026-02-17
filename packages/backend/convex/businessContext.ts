@@ -1,26 +1,35 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { resolveTenantId } from "./lib/auth";
 
 /**
  * Get the current business context.
  * Returns null if not configured.
  */
 export const get = query({
-  args: {},
-  handler: async (ctx) => {
-    // Only one business context should exist - get the first one
-    return await ctx.db.query("businessContext").first();
+  args: { machineToken: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
+    return await ctx.db
+      .query("businessContext")
+      .withIndex("by_tenant", (q) => q.eq("tenantId", tenantId))
+      .first();
   },
 });
 
 /**
- * Check if business context is configured and approved.
+ * Check if business context is configured.
+ * Returns true if a businessContext record exists for the tenant.
  */
 export const isConfigured = query({
-  args: {},
-  handler: async (ctx) => {
-    const context = await ctx.db.query("businessContext").first();
-    return context?.approved === true;
+  args: { machineToken: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
+    const context = await ctx.db
+      .query("businessContext")
+      .withIndex("by_tenant", (q) => q.eq("tenantId", tenantId))
+      .first();
+    return context !== null;
   },
 });
 
@@ -30,6 +39,7 @@ export const isConfigured = query({
  */
 export const save = mutation({
   args: {
+    machineToken: v.optional(v.string()),
     url: v.string(),
     name: v.optional(v.string()),
     description: v.optional(v.string()),
@@ -44,20 +54,22 @@ export const save = mutation({
         tone: v.optional(v.string()),
       }),
     ),
-    approved: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
+    const { machineToken: _, ...rest } = args;
     const now = Date.now();
-    const existing = await ctx.db.query("businessContext").first();
+    const existing = await ctx.db
+      .query("businessContext")
+      .withIndex("by_tenant", (q) => q.eq("tenantId", tenantId))
+      .first();
 
     const data = {
-      url: args.url,
-      name: args.name,
-      description: args.description,
-      favicon: args.favicon,
-      metadata: args.metadata,
-      approved: args.approved ?? false,
-      approvedAt: args.approved ? now : undefined,
+      url: rest.url,
+      name: rest.name,
+      description: rest.description,
+      favicon: rest.favicon,
+      metadata: rest.metadata,
       updatedAt: now,
     };
 
@@ -68,30 +80,9 @@ export const save = mutation({
 
     return await ctx.db.insert("businessContext", {
       ...data,
+      tenantId,
       createdAt: now,
     });
-  },
-});
-
-/**
- * Mark the current business context as approved.
- */
-export const approve = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const existing = await ctx.db.query("businessContext").first();
-
-    if (!existing) {
-      throw new Error("No business context to approve");
-    }
-
-    await ctx.db.patch(existing._id, {
-      approved: true,
-      approvedAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-
-    return existing._id;
   },
 });
 
@@ -100,9 +91,13 @@ export const approve = mutation({
  * Used for resetting onboarding.
  */
 export const clear = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const existing = await ctx.db.query("businessContext").first();
+  args: { machineToken: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const tenantId = await resolveTenantId(ctx, args);
+    const existing = await ctx.db
+      .query("businessContext")
+      .withIndex("by_tenant", (q) => q.eq("tenantId", tenantId))
+      .first();
 
     if (existing) {
       await ctx.db.delete(existing._id);
