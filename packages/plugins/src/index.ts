@@ -1,9 +1,10 @@
 // Registry
-export { loadPlugins, hasPlugin, getPlugin } from "./registry";
-export type { PluginMap } from "./registry";
+export { registerPlugins, hasPlugin, getPlugin } from "./registry";
+export type { PluginMap, CloudPluginRegister } from "./registry";
 
 // Interfaces
 export type {
+  PluginLogger,
   SquadhubProvisioner,
   ProvisionParams,
   ProvisionResult,
